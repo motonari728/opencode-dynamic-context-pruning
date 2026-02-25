@@ -5,6 +5,7 @@ import { assignMessageRefs } from "./message-ids"
 import { syncToolCache } from "./state/tool-cache"
 import { deduplicate, supersedeWrites, purgeErrors } from "./strategies"
 import { prune, syncToolOrigins, insertPruneToolContext, insertMessageIdContext } from "./messages"
+import { sendIgnoredMessage } from "./ui/notification"
 import { buildToolIdList, isIgnoredUserMessage } from "./messages/utils"
 import { checkSession } from "./state"
 import { renderSystemPrompt } from "./prompts"
@@ -125,7 +126,16 @@ export function createChatMessageTransformHandler(
         purgeErrors(state, logger, config, output.messages)
 
         prune(state, logger, config, output.messages)
-        insertPruneToolContext(state, config, logger, output.messages)
+        const injectedItemCount = insertPruneToolContext(state, config, logger, output.messages)
+        if (injectedItemCount > 0 && state.sessionId) {
+            await sendIgnoredMessage(
+                client,
+                state.sessionId,
+                `DCP: prunable-tools list injected (toolCallsSinceLastPrune=${state.nudgeCounter}, items=${injectedItemCount})`,
+                {},
+                logger,
+            )
+        }
         insertMessageIdContext(state, config, output.messages)
 
         applyPendingManualTriggerPrompt(state, output.messages, logger)

@@ -240,9 +240,9 @@ export const insertPruneToolContext = (
     config: PluginConfig,
     logger: Logger,
     messages: WithParts[],
-): void => {
+): number => {
     if (state.manualMode || state.pendingManualTrigger) {
-        return
+        return 0
     }
 
     const pruneEnabled = config.tools.prune.permission !== "deny"
@@ -250,11 +250,12 @@ export const insertPruneToolContext = (
     const compressEnabled = config.tools.compress.permission !== "deny"
 
     if (!pruneEnabled && !distillEnabled && !compressEnabled) {
-        return
+        return 0
     }
 
     const pruneOrDistillEnabled = pruneEnabled || distillEnabled
     const contentParts: string[] = []
+    let injectedItemCount = 0
     const lastUserMessage = getLastUserMessage(messages)
     const providerId = lastUserMessage
         ? (lastUserMessage.info as UserMessage).model.providerID
@@ -270,20 +271,19 @@ export const insertPruneToolContext = (
             contentParts.push(getCooldownMessage(config))
         }
     } else {
-        let listInjected = false
         if (pruneOrDistillEnabled) {
             const threshold = config.tools.settings.prunableToolsInjectionFrequency ?? 0
             if (threshold === 0) {
                 const prunableToolsList = buildPrunableToolsList(state, config, logger)
                 if (prunableToolsList) {
                     contentParts.push(prunableToolsList)
-                    listInjected = true
+                    injectedItemCount = buildPrunableToolsLines(state, config, logger).length
                 }
             } else if (state.nudgeCounter >= threshold) {
                 const lines = buildPrunableToolsLines(state, config, logger)
                 if (lines.length >= threshold) {
                     contentParts.push(wrapPrunableTools(lines.join("\n")))
-                    listInjected = true
+                    injectedItemCount = lines.length
                 }
             }
         }
@@ -298,7 +298,7 @@ export const insertPruneToolContext = (
             logger.info("Inserting compress nudge - token usage exceeds contextLimit")
             contentParts.push(renderCompressNudge())
         } else if (
-            listInjected &&
+            injectedItemCount > 0 &&
             config.tools.settings.nudgeEnabled &&
             state.nudgeCounter >= Math.max(1, config.tools.settings.nudgeFrequency)
         ) {
@@ -308,13 +308,13 @@ export const insertPruneToolContext = (
     }
 
     if (contentParts.length === 0) {
-        return
+        return 0
     }
 
     const combinedContent = `\n${contentParts.join("\n")}`
 
     if (!lastUserMessage) {
-        return
+        return 0
     }
 
     const lastNonIgnoredMessage = messages.findLast(
@@ -322,7 +322,7 @@ export const insertPruneToolContext = (
     )
 
     if (!lastNonIgnoredMessage) {
-        return
+        return 0
     }
 
     // When following a user message, append a synthetic text part since models like Claude
@@ -354,6 +354,7 @@ export const insertPruneToolContext = (
             lastNonIgnoredMessage.parts.push(textPart)
         }
     }
+    return injectedItemCount
 }
 
 export const insertMessageIdContext = (
