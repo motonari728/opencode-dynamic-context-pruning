@@ -1,5 +1,5 @@
 import type { PruneOrigin, SessionState, WithParts } from "./types"
-import { isMessageCompacted } from "../shared-utils"
+import { getMessageCreated, isMessageCompacted } from "../shared-utils"
 
 export async function isSubAgentSession(client: any, sessionID: string): Promise<boolean> {
     try {
@@ -13,8 +13,13 @@ export async function isSubAgentSession(client: any, sessionID: string): Promise
 export function findLastCompactionTimestamp(messages: WithParts[]): number {
     for (let i = messages.length - 1; i >= 0; i--) {
         const msg = messages[i]
-        if (msg.info.role === "assistant" && msg.info.summary === true) {
-            return msg.info.time.created
+        if (msg.info.role !== "assistant" || msg.info.summary !== true) {
+            continue
+        }
+
+        const created = getMessageCreated(msg)
+        if (created !== undefined) {
+            return created
         }
     }
     return 0
