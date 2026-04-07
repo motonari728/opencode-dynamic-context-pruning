@@ -1,7 +1,6 @@
 import type { SessionState, WithParts } from "../state"
 import type { Logger } from "../logger"
 import type { PluginConfig } from "../config"
-import type { UserMessage } from "@opencode-ai/sdk/v2"
 import { formatMessageIdTag } from "../message-ids"
 import { renderNudge, renderCompressNudge } from "../prompts"
 import {
@@ -14,7 +13,7 @@ import {
     rejectsTextParts,
 } from "./utils"
 import { getFilePathsFromParameters, isProtected } from "../protected-file-patterns"
-import { getLastUserMessage, isMessageCompacted } from "../shared-utils"
+import { getLastUserMessage, getUserMessageMetadata, isMessageCompacted } from "../shared-utils"
 import { getCurrentTokenUsage } from "../strategies/utils"
 
 function parsePercentageString(value: string, total: number): number | undefined {
@@ -256,12 +255,7 @@ export const insertPruneToolContext = (
     const pruneOrDistillEnabled = pruneEnabled || distillEnabled
     const contentParts: string[] = []
     const lastUserMessage = getLastUserMessage(messages)
-    const providerId = lastUserMessage
-        ? (lastUserMessage.info as UserMessage).model.providerID
-        : undefined
-    const modelId = lastUserMessage
-        ? (lastUserMessage.info as UserMessage).model.modelID
-        : undefined
+    const { providerId, modelId } = getUserMessageMetadata(lastUserMessage)
 
     if (state.lastToolPrune) {
         const threshold = config.tools.settings.prunableToolsInjectionFrequency ?? 0
@@ -337,7 +331,7 @@ export const insertPruneToolContext = (
         )
         lastNonIgnoredMessage.parts.push(textPart)
     } else {
-        if (rejectsTextParts(modelId ?? "")) {
+        if (!modelId || rejectsTextParts(modelId)) {
             const toolPart = createSyntheticToolPart(
                 lastNonIgnoredMessage,
                 combinedContent,
@@ -366,9 +360,7 @@ export const insertMessageIdContext = (
     }
 
     const lastUserMessage = getLastUserMessage(messages)
-    const toolModelId = lastUserMessage
-        ? ((lastUserMessage.info as UserMessage).model.modelID ?? "")
-        : ""
+    const { modelId: toolModelId } = getUserMessageMetadata(lastUserMessage)
 
     for (const message of messages) {
         if (message.info.role === "user" && isIgnoredUserMessage(message)) {
@@ -397,8 +389,10 @@ export const insertMessageIdContext = (
             continue
         }
 
-        if (rejectsTextParts(toolModelId)) {
-            message.parts.push(createSyntheticToolPart(message, tag, toolModelId, messageIdSeed))
+        if (!toolModelId || rejectsTextParts(toolModelId)) {
+            message.parts.push(
+                createSyntheticToolPart(message, tag, toolModelId ?? "", messageIdSeed),
+            )
         } else {
             message.parts.push(createSyntheticTextPart(message, tag, messageIdSeed))
         }

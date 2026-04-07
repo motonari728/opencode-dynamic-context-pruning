@@ -1,9 +1,32 @@
+import type { UserMessage } from "@opencode-ai/sdk/v2"
 import { SessionState, WithParts } from "./state"
 import { isIgnoredUserMessage } from "./messages/utils"
+
+export interface UserMessageMetadata {
+    providerId: string | undefined
+    modelId: string | undefined
+    agent: string | undefined
+    variant: string | undefined
+}
 
 export const getMessageCreated = (msg: WithParts | null | undefined): number | undefined => {
     const created = msg?.info?.time?.created
     return typeof created === "number" ? created : undefined
+}
+
+export const getUserMessageMetadata = (
+    msg: WithParts | null | undefined,
+    fallbackVariant?: string,
+): UserMessageMetadata => {
+    const userInfo = msg?.info as Partial<UserMessage> | undefined
+
+    return {
+        providerId:
+            typeof userInfo?.model?.providerID === "string" ? userInfo.model.providerID : undefined,
+        modelId: typeof userInfo?.model?.modelID === "string" ? userInfo.model.modelID : undefined,
+        agent: typeof userInfo?.agent === "string" ? userInfo.agent : undefined,
+        variant: fallbackVariant ?? userInfo?.variant,
+    }
 }
 
 export const isMessageCompacted = (state: SessionState, msg: WithParts): boolean => {

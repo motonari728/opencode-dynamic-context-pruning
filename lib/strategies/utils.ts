@@ -1,8 +1,8 @@
 import { SessionState, WithParts } from "../state"
-import { AssistantMessage, UserMessage } from "@opencode-ai/sdk/v2"
+import { AssistantMessage } from "@opencode-ai/sdk/v2"
 import { Logger } from "../logger"
 import { countTokens as anthropicCountTokens } from "@anthropic-ai/tokenizer"
-import { getLastUserMessage } from "../shared-utils"
+import { getLastUserMessage, getUserMessageMetadata } from "../shared-utils"
 
 /**
  * Get current token usage from the last assistant message.
@@ -46,11 +46,7 @@ export function getCurrentParams(
             variant: state.variant,
         }
     }
-    const userInfo = userMsg.info as UserMessage
-    const agent: string = userInfo.agent
-    const providerId: string | undefined = userInfo.model.providerID
-    const modelId: string | undefined = userInfo.model.modelID
-    const variant: string | undefined = state.variant ?? userInfo.variant
+    const { providerId, modelId, agent, variant } = getUserMessageMetadata(userMsg, state.variant)
 
     return { providerId, modelId, agent, variant }
 }

@@ -1,12 +1,77 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import type { PluginConfig } from "../lib/config"
+import type { Logger } from "../lib/logger"
+import { insertMessageIdContext, insertPruneToolContext } from "../lib/messages/inject"
 import { createSessionState, type SessionState, type WithParts } from "../lib/state"
 import { countTurns, findLastCompactionTimestamp } from "../lib/state/utils"
 import { isMessageCompacted } from "../lib/shared-utils"
+import { getCurrentParams } from "../lib/strategies/utils"
 
 const asMessage = (value: unknown): WithParts => value as WithParts
 
 const createState = (): SessionState => createSessionState()
+
+const createConfig = (): PluginConfig => ({
+    enabled: true,
+    debug: false,
+    pruneNotification: "off",
+    pruneNotificationType: "chat",
+    commands: {
+        enabled: true,
+        protectedTools: [],
+    },
+    manualMode: {
+        enabled: false,
+        automaticStrategies: true,
+    },
+    turnProtection: {
+        enabled: false,
+        turns: 4,
+    },
+    protectedFilePatterns: [],
+    tools: {
+        settings: {
+            nudgeEnabled: true,
+            nudgeFrequency: 10,
+            protectedTools: [],
+            contextLimit: 100000,
+            prunableToolsInjectionFrequency: 0,
+        },
+        distill: {
+            permission: "allow",
+            showDistillation: false,
+        },
+        compress: {
+            permission: "allow",
+            showCompression: false,
+        },
+        prune: {
+            permission: "allow",
+        },
+    },
+    strategies: {
+        deduplication: {
+            enabled: true,
+            protectedTools: [],
+        },
+        supersedeWrites: {
+            enabled: true,
+        },
+        purgeErrors: {
+            enabled: true,
+            turns: 4,
+            protectedTools: [],
+        },
+    },
+})
+
+const createLogger = (): Logger =>
+    ({
+        debug() {},
+        info() {},
+        warn() {},
+    }) as unknown as Logger
 
 test("isMessageCompacted ignores messages without created timestamps", () => {
     const state = createState()
@@ -96,4 +161,65 @@ test("countTurns still counts step-start messages when another message lacks cre
     ]
 
     assert.equal(countTurns(state, messages), 1)
+})
+
+test("insertPruneToolContext tolerates a user message without model metadata", () => {
+    const state = createState()
+    const config = createConfig()
+    const logger = createLogger()
+    const messages = [
+        asMessage({
+            info: {
+                id: "user-missing-model",
+                sessionID: "session-1",
+                role: "user",
+            },
+            parts: [{ type: "text", text: "hello" }],
+        }),
+    ]
+
+    assert.doesNotThrow(() => insertPruneToolContext(state, config, logger, messages))
+    assert.equal(messages[0].parts.length, 2)
+})
+
+test("insertMessageIdContext tolerates a user message without model metadata", () => {
+    const state = createState()
+    const config = createConfig()
+    const messages = [
+        asMessage({
+            info: {
+                id: "user-missing-model",
+                sessionID: "session-1",
+                role: "user",
+            },
+            parts: [{ type: "text", text: "hello" }],
+        }),
+    ]
+
+    state.messageIds.byRawId.set("user-missing-model", "m0000")
+
+    assert.doesNotThrow(() => insertMessageIdContext(state, config, messages))
+    assert.equal(messages[0].parts.length, 2)
+})
+
+test("getCurrentParams returns undefined model metadata when the last user message lacks model", () => {
+    const state = createState()
+    const logger = createLogger()
+    const messages = [
+        asMessage({
+            info: {
+                id: "user-missing-model",
+                sessionID: "session-1",
+                role: "user",
+                agent: "main",
+            },
+            parts: [{ type: "text", text: "hello" }],
+        }),
+    ]
+
+    const params = getCurrentParams(state, messages, logger)
+
+    assert.equal(params.providerId, undefined)
+    assert.equal(params.modelId, undefined)
+    assert.equal(params.agent, "main")
 })
